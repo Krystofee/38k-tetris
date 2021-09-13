@@ -1,0 +1,387 @@
+<html>
+  <head>
+    <style>
+      html,
+      body {
+        font-family: Arial;
+      }
+
+      #tetris-canvas {
+        width: 300px;
+        height: 600px;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="display: flex; justify-content: center; padding: 4rem">
+      <canvas id="tetris-canvas" width="300" height="600"></canvas>
+      <div style="margin-left: 2rem">
+        <div style="font-weight: bold; font-size: 36px">38k tetris</div>
+
+        <div style="margin-top: 2rem; text-align: center">
+          <div style="color: #666; font-size: 16px; text-transform: uppercase">
+            Score
+          </div>
+          <div
+            id="tetris-score"
+            style="
+              color: #333;
+              font-weight: bold;
+              font-size: 44px;
+              margin-top: 1rem;
+            "
+          ></div>
+        </div>
+
+        <div style="margin-top: 2rem; text-align: center">
+          <div style="color: #666; font-size: 16px; text-transform: uppercase">
+            Next
+          </div>
+          <div
+            style="
+              margin-top: 2rem;
+              color: #333;
+              font-weight: bold;
+              font-size: 44px;
+            "
+          >
+            <canvas id="tetris-preview-canvas" width="80" height="80"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const scoreElement = document.getElementById("tetris-score");
+      const canvas = document.getElementById("tetris-canvas");
+      const ctx = canvas.getContext("2d");
+
+      const previewCanvas = document.getElementById("tetris-preview-canvas");
+      const previewCtx = previewCanvas.getContext("2d");
+
+      ctx.fillStyle = "#0000ff";
+
+      const SPEED = 500;
+      const CANVAS_WIDTH = 300;
+      const CANVAS_HEIGHT = 600;
+
+      const GRID_WIDTH = 8;
+      const GRID_HEIGHT = 16;
+      const BLOCK_SIZE = CANVAS_WIDTH / GRID_WIDTH;
+
+      const PREVIEW_WIDTH = 80;
+      const PREVIEW_HEIGHT = 80;
+      const PREVIEW_BLOCK_SIZE = PREVIEW_WIDTH / 4;
+
+      const grid = [...Array(GRID_HEIGHT)].map(() =>
+        [...Array(GRID_WIDTH)].map(() => 0)
+      );
+
+      const BLOCK_TEMPLATES = [
+        { color: "#5b5be8", block: [[1], [1], [1], [1]] },
+        {
+          color: "#e85b8e",
+          block: [
+            [1, 1],
+            [1, 1],
+          ],
+        },
+        {
+          color: "#5be8a8",
+          block: [
+            // [0, 0, 0],
+            [0, 1, 0],
+            [1, 1, 1],
+          ],
+        },
+        {
+          color: "#b7e85b",
+          block: [
+            // [0, 0, 0],
+            [1, 1, 0],
+            [0, 1, 1],
+          ],
+        },
+        {
+          color: "#e8975b",
+          block: [
+            // [0, 0, 0],
+            [0, 1, 1],
+            [1, 1, 0],
+          ],
+        },
+        {
+          color: "#ba5be8",
+          block: [
+            // [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 1],
+          ],
+        },
+      ];
+
+      function renderBlock(c, x, y, color) {
+        c.fillStyle = color;
+        c.fillRect(BLOCK_SIZE * x, BLOCK_SIZE * y, BLOCK_SIZE, BLOCK_SIZE);
+      }
+
+      class Block {
+        constructor(template, color) {
+          this.template = template.map((row) => row.map((cell) => cell));
+          this.color = color;
+          this.position = [0, 0];
+        }
+
+        get height() {
+          return this.template.length;
+        }
+
+        get width() {
+          return this.template[0].length;
+        }
+
+        clone() {
+          const result = new Block(this.template, this.color);
+          result.position = this.position;
+          return result;
+        }
+
+        rotate() {
+          const resultTemplate = Array(this.width);
+
+          for (let x = 0; x < this.width; x++) {
+            resultTemplate[x] = [];
+            for (let y = 0; y < this.height; y++) {
+              resultTemplate[x].push(this.template[y][x]);
+            }
+          }
+
+          this.template = resultTemplate;
+        }
+
+        deleteBlockAt(x, y) {
+          const dx = x - this.position[0];
+          const dy = y - this.position[1];
+          if (dy >= 0 && dy < this.height && dx >= 0 && dx < this.width) {
+            this.template[dy][dx] = 0;
+          }
+        }
+
+        hasBlockAt(x, y) {
+          const dx = x - this.position[0];
+          const dy = y - this.position[1];
+          if (dy >= 0 && dy < this.height && dx >= 0 && dx < this.width) {
+            return this.template[dy][dx];
+          }
+          return false;
+        }
+
+        collidesWith(block, move) {
+          for (let dy = 0; dy < this.height; dy++)
+            for (let dx = 0; dx < this.width; dx++) {
+              if (
+                this.template[dy][dx] &&
+                block.hasBlockAt(
+                  this.position[0] + dx + move[0],
+                  this.position[1] + dy + move[1]
+                )
+              ) {
+                return true;
+              }
+            }
+
+          return false;
+        }
+
+        checkBoundariesCollision(move) {
+          const x = this.position[0] + move[0];
+          const y = this.position[1] + move[1] - 1;
+
+          if (y + this.height >= GRID_HEIGHT) {
+            return true;
+          }
+          if (x < 0) {
+            return true;
+          }
+          if (x + this.width > GRID_WIDTH) {
+            return true;
+          }
+          return false;
+        }
+
+        move(move) {
+          console.log(move);
+          if (!this.checkBoundariesCollision(move)) {
+            this.position[0] += move[0];
+            this.position[1] += move[1];
+          }
+        }
+
+        render(c) {
+          this.template.forEach((row, dy) =>
+            row.forEach(
+              (value, dx) =>
+                value &&
+                renderBlock(
+                  c,
+                  this.position[0] + dx,
+                  this.position[1] + dy,
+                  this.color
+                )
+            )
+          );
+        }
+
+        renderPreview(c) {
+          this.template.forEach((row, dy) =>
+            row.forEach((value, dx) => {
+              if (value) {
+                c.fillStyle = this.color;
+                c.fillRect(
+                  dx * PREVIEW_BLOCK_SIZE,
+                  dy * PREVIEW_BLOCK_SIZE,
+                  PREVIEW_BLOCK_SIZE,
+                  PREVIEW_BLOCK_SIZE
+                );
+              }
+            })
+          );
+        }
+      }
+
+      let nextBlock = null;
+
+      function getNextBlock() {
+        const result = nextBlock;
+
+        const template =
+          BLOCK_TEMPLATES[Math.floor(Math.random() * BLOCK_TEMPLATES.length)];
+        nextBlock = new Block(template.block, template.color);
+        nextBlock.position = [Math.floor(GRID_WIDTH / 2), 0];
+
+        previewCtx.fillStyle = "#ffffff";
+        previewCtx.fillRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        nextBlock.renderPreview(previewCtx);
+        previewCtx.stroke();
+
+        return result;
+      }
+
+      let activeBlock = getNextBlock();
+      let stableBlocks = [];
+      let score = 0;
+      let displayedScore = null;
+
+      let moveDelta = [0, 0];
+      let shouldRotate = false;
+      let isGameOver = false;
+
+      function handleInput(event) {
+        if (event.keyCode == 37) {
+          moveDelta = [-1, 0];
+        } else if (event.keyCode == 39) {
+          moveDelta = [1, 0];
+        } else if (event.keyCode == 32) {
+          shouldRotate = true;
+        } else {
+          moveDelta = [0, 0];
+        }
+      }
+
+      function update() {
+        if (!activeBlock) {
+          activeBlock = getNextBlock();
+        }
+
+        // resolve rotations
+        if (shouldRotate) {
+          shouldRotate = false;
+          const activeBlockClone = activeBlock.clone();
+          activeBlockClone.rotate();
+
+          console.log(activeBlockClone);
+
+          if (
+            !stableBlocks.some((block) =>
+              activeBlockClone.collidesWith(block, [0, 0])
+            ) &&
+            !activeBlockClone.checkBoundariesCollision([0, 0])
+          ) {
+            activeBlock = activeBlockClone;
+          }
+        }
+
+        // moves
+
+        const move = [0 + moveDelta[0], 1 + moveDelta[1]];
+        moveDelta = [0, 0];
+
+        if (
+          stableBlocks.some((block) => activeBlock.collidesWith(block, move)) ||
+          activeBlock.checkBoundariesCollision([0, 1])
+        ) {
+          if (activeBlock.position[1] === 0) {
+            isGameOver = true;
+          } else {
+            stableBlocks.push(activeBlock);
+            activeBlock = null;
+          }
+        }
+
+        ctx.fillStyle = "#eeeeee";
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.fillStyle = "#0000ff";
+
+        if (activeBlock) {
+          activeBlock.move(move);
+          activeBlock.render(ctx);
+        }
+
+        // check tetris
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+          let blocksOnRow = 0;
+          for (let x = 0; x < GRID_WIDTH; x++) {
+            if (stableBlocks.some((block) => block.hasBlockAt(x, y))) {
+              blocksOnRow += 1;
+            }
+          }
+
+          if (blocksOnRow == GRID_WIDTH) {
+            score += 100;
+            const affectedBlocks = new Set();
+            for (let x = 0; x < GRID_WIDTH; x++) {
+              stableBlocks.forEach((block) => {
+                affectedBlocks.add(block);
+                block.deleteBlockAt(x, y);
+              });
+            }
+
+            affectedBlocks.forEach((block) => {
+              block.position[1] += 1;
+            });
+          }
+        }
+
+        if (displayedScore !== score) {
+          displayedScore = score;
+          scoreElement.innerText = score;
+        }
+
+        stableBlocks.forEach((block) => block.render(ctx));
+        ctx.stroke();
+
+        if (isGameOver) {
+        } else {
+          setTimeout(update, SPEED);
+        }
+      }
+
+      function start() {
+        window.addEventListener("keydown", handleInput);
+        setTimeout(update, SPEED);
+      }
+
+      start();
+    </script>
+  </body>
+</html>
